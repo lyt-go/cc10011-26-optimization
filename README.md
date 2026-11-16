@@ -75,5 +75,27 @@ npm run dev
 - 列表接口统一返回 `{ items, total, page, size }`，动作接口统一返回 `{ ok, message }`。
 - 状态流转只允许在 `app/services` 里改，路由层不做业务判断。
 
+## 事件归因计算（事件分析）
+
+围绕事件分析模块提供事件归因能力，处理点沿既有数据流定位：
+
+- `app/services/eventstream.py`：用户事件流读取。高基数分组下用 `(事件时间, 事件ID)`
+  keyset 游标分批读取，按 `事件ID` 去重，分批不重不漏；流中保留重复投递用于验证。
+- `app/services/attribution.py`：归因引擎。读取事件流与分析模型配置（归因窗口、
+  置信水平、最小样本量），按归因窗口做末次触点归并，产出事件归因结果数据集：
+  - 同一事件命中首次分组规则与最新有效分组规则冲突时，一个归因快照只钉住
+    最新有效规则版本，全快照一致适用，置信区间基于同一归因快照；冲突事件记入溯源。
+  - 置信区间用 Wilson 公式按快照确定性计算，刷新不漂移；样本不足的分组照常落行，
+    给出稳定的「样本不足」判定与判定依据，不出空表。
+  - 同一业务批次并发到达只落一份完整结果数据集；状态只沿
+    待计算 → 计算中 → 已生成 → 已发布 向前推进。
+- 接口：`POST /api/eventanalysis/compute` 发起计算（幂等，同批复用），
+  `GET /api/eventanalysis/attribution` 列表，`GET /api/eventanalysis/attribution/{id}`
+  明细（含行级置信区间、样本判定与溯源），`POST /api/eventanalysis/attribution/{id}/actions`
+  推进状态。
+- 分群画像通过 `GET /api/segmentprofile/attribution` 读取同一份结果数据集（只读）。
+
+验证脚本：`cd backend && .venv/bin/python -I tests/verify_attribution.py`
+
 领域：数据工程
 子方向：数据分析与数据应用

@@ -1,4 +1,8 @@
-"""分群画像接口：维护画像定义，覆盖提交画像评审、发布画像、下线画像等动作。"""
+"""分群画像接口：维护画像定义，覆盖提交画像评审、发布画像、下线画像等动作。
+
+分群画像与事件分析读取同一份事件归因结果数据集：这里只提供只读视图，
+数据仍由事件分析的归因计算产出，顺着既有数据流定位处理点。
+"""
 from __future__ import annotations
 
 from typing import Any
@@ -6,6 +10,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query
 
 from app.schemas import ActionResult, EntryPayload, PageResult
+from app.services import attribution
 from app.services.segmentprofile import SegmentprofileService
 
 router = APIRouter(prefix="/api/segmentprofile", tags=["分群画像"])
@@ -14,6 +19,22 @@ service = SegmentprofileService()
 
 LIST_FIELDS = ["画像编号", "分群名称", "筛选规则", "画像维度", "对比基准", "更新周期", "覆盖对象数", "画像快照"]
 STATUSES = ["草稿", "画像评审中", "已发布", "已下线"]
+
+
+@router.get("/attribution", response_model=PageResult[dict])
+def list_shared_attribution(page: int = 1, size: int = 20) -> PageResult[dict]:
+    """分群画像视角读取事件归因结果数据集：与事件分析同源，只读不另算。"""
+    items, total = attribution.list_datasets(page=page, size=size)
+    return PageResult(items=items, total=total, page=page, size=size)
+
+
+@router.get("/attribution/{dataset_id}", response_model=dict)
+def get_shared_attribution(dataset_id: int) -> dict:
+    """分群画像读取单份事件归因结果数据集明细：分群维度上的归因转化表现。"""
+    dataset = attribution.get_dataset(dataset_id)
+    if dataset is None:
+        raise HTTPException(status_code=404, detail=f"事件归因结果数据集 {dataset_id} 不存在")
+    return dataset
 
 
 @router.get("", response_model=PageResult[dict])
